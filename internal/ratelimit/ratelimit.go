@@ -8,6 +8,7 @@ import (
 
     "github.com/redis/go-redis/v9"
     "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/tenant"
+    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/decisionlog"
 )
 
 type RateLimiter struct {
@@ -25,32 +26,48 @@ func NewRateLimiter(redis *redis.Client, limit int, refill time.Duration) *RateL
 }
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t, ok := tenant.FromContext(r.Context())
+		if !ok {
+			decisionlog.LogDecision(r, decisionlog.DecisionBlock, "Tenant not found for rate limiting", nil)
+			http.Error(w, "Tenant not found", http.StatusUnauthorized)
+			return
+		}
 
-        t, ok := tenant.FromContext(r.Context())
-        if !ok {
-            http.Error(w, "Tenant not found", http.StatusUnauthorized)
-            return
-        }
+		key := "ratelimit:" + t.ID
+		ctx := context.Background()
 
-        key := "ratelimit:" + t.ID
-        ctx := context.Background()
+		tokensStr, err := rl.redis.Get(ctx, key).Result()
+		if err == redis.Nil {
+			rl.redis.Set(ctx, key, rl.limit-1, rl.refill)
+			decisionlog.LogDecision(r, decisionlog.DecisionAllow, "Rate limit OK (first request)", map[string]any{
+				"tenant": t.ID,
+				"limit":  rl.limit,
+				"used":   1,
+			})
+			next.ServeHTTP(w, r)
+			return
+		}
 
-        tokensStr, err := rl.redis.Get(ctx, key).Result()
-        if err == redis.Nil {
-            // first request
-            rl.redis.Set(ctx, key, rl.limit-1, rl.refill)
-            next.ServeHTTP(w, r)
-            return
-        }
+		tokens, _ := strconv.Atoi(tokensStr)
+		if tokens <= 0 {
+			decisionlog.LogDecision(r, decisionlog.DecisionBlock, "Rate limit exceeded", map[string]any{
+				"tenant": t.ID,
+				"limit":  rl.limit,
+				"used":   tokens,
+			})
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 
-        tokens, _ := strconv.Atoi(tokensStr)
-        if tokens <= 0 {
-            http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-            return
-        }
+		rl.redis.Decr(ctx, key)
+		decisionlog.LogDecision(r, decisionlog.DecisionAllow, "Rate limit OK", map[string]any{
+			"tenant": t.ID,
+			"limit":  rl.limit,
+			"used":   tokens,
+		})
 
-        rl.redis.Decr(ctx, key)
-        next.ServeHTTP(w, r)
-    })
+		next.ServeHTTP(w, r)
+	})
 }
+

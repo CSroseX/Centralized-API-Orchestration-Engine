@@ -1,54 +1,74 @@
 package main
 
 import (
-    "log"
-    "net/http"
-    "github.com/redis/go-redis/v9"
-    "time"
+	"log"
+	"net/http"
+	"time"
 
+	"github.com/redis/go-redis/v9"
 
-    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/middleware"
-    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/proxy"
-    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/ratelimit"
-    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/tenant"
-    "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/observability"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/chaos"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/middleware"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/observability"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/proxy"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/ratelimit"
+	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/tenant"
 )
 
 func main() {
-    shutdown := observability.InitTracer("api-gateway")
-    defer shutdown()
+	// ---- Tracing ----
+	shutdown := observability.InitTracer("api-gateway")
+	defer shutdown()
 
-    // Redis client
-    rdb := redis.NewClient(&redis.Options{
-        Addr: "localhost:6379",
-    })
-    rl := ratelimit.NewRateLimiter(rdb, 5, time.Minute)
+	// ---- Chaos auto-recovery watcher ----
+	chaos.AutoRecover()
 
-    // Backend proxies
-    userHandler, _ := proxy.ProxyHandler("http://localhost:9001")
-    orderHandler, _ := proxy.ProxyHandler("http://localhost:9002")
+	// ---- Redis ----
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
 
-    // Secured handlers
-    securedUserHandler := tenant.Middleware(
-        rl.Middleware(userHandler),
-    )
-    securedOrderHandler := tenant.Middleware(
-        rl.Middleware(orderHandler),
-    )
+	// ---- Rate Limiter ----
+	rl := ratelimit.NewRateLimiter(rdb, 5, time.Minute)
 
-    // Router
-    router := proxy.NewRouter()
-    router.AddRoute("/users", securedUserHandler)
-    router.AddRoute("/orders", securedOrderHandler)
+	// ---- Backend proxies ----
+	userHandler, _ := proxy.ProxyHandler("http://localhost:9001")
+	orderHandler, _ := proxy.ProxyHandler("http://localhost:9002")
 
-    // Middleware order: Logging → Metrics → Tracing → Router
-    http.Handle("/", middleware.Logging(
-        middleware.Metrics(
-            middleware.Tracing(router),
-        ),
-    ))
+	// ---- Secure pipelines ----
+	securedUserHandler :=
+		chaos.Middleware(
+			tenant.Middleware(
+				rl.Middleware(userHandler),
+			),
+		)
 
-    log.Println("API Gateway running on :8080")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+	securedOrderHandler :=
+		chaos.Middleware(
+			tenant.Middleware(
+				rl.Middleware(orderHandler),
+			),
+		)
+
+	// ---- Router ----
+	router := proxy.NewRouter()
+	router.AddRoute("/users", securedUserHandler)
+	router.AddRoute("/orders", securedOrderHandler)
+
+	// ---- Global middleware stack ----
+	finalHandler :=
+		middleware.Logging(
+			middleware.Metrics(
+				middleware.Tracing(router),
+			),
+		)
+
+	http.Handle("/", finalHandler)
+
+	// ---- Admin Chaos Control ----
+	http.HandleFunc("/admin/chaos/enable", chaos.EnableHandler)
+	http.HandleFunc("/admin/chaos/disable", chaos.DisableHandler)
+
+	log.Println("API Gateway running on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
