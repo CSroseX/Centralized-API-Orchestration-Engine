@@ -14,13 +14,14 @@ import (
 	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/proxy"
 	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/ratelimit"
 	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/tenant"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
 	// ---- Tracing ----
 	shutdown := observability.InitTracer("api-gateway")
 	defer shutdown()
-
+    http.Handle("/metrics", promhttp.Handler())
 	// ---- Chaos auto-recovery watcher ----
 	chaos.AutoRecover()
 
