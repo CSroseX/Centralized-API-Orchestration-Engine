@@ -74,10 +74,12 @@ func main() {
 	router.AddRoute("/admin/analytics", analytics.Handler(analyticsEngine))
 
 	finalHandler := middleware.Logging(
+	tenant.ResolutionMiddleware(
 		middleware.Metrics(
 			middleware.Tracing(router),
-		),
-	)
+            ),
+        ),
+    )
 
 	http.Handle("/", finalHandler)
 

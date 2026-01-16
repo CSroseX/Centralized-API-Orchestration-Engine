@@ -2,6 +2,7 @@
 *.exe
 *.test
 *.out
+DEEP_SCAN_ANALYSIS.md
 
 # Local mocks / test backends
 mock-*.go

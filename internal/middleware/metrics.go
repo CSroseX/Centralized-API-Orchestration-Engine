@@ -6,9 +6,57 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	tenantpkg "github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/tenant"
 )
 
-// MetricsCollector holds Prometheus-style metrics
+// Prometheus metrics (auto-registered)
+var (
+	requestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_gateway_requests_total",
+			Help: "Total number of requests by route, tenant, and status",
+		},
+		[]string{"route", "tenant", "status"},
+	)
+
+	requestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "api_gateway_request_duration_seconds",
+			Help:    "Request duration in seconds",
+			Buckets: prometheus.DefBuckets, // 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+		},
+		[]string{"route", "tenant"},
+	)
+
+	errorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_gateway_errors_total",
+			Help: "Total number of errors by route and tenant",
+		},
+		[]string{"route", "tenant"},
+	)
+
+	droppedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_gateway_requests_dropped_total",
+			Help: "Total number of chaos-dropped requests",
+		},
+		[]string{"route", "tenant"},
+	)
+
+	rateLimitBlocks = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "api_gateway_rate_limit_blocks_total",
+			Help: "Total number of rate limit blocks",
+		},
+		[]string{"tenant"},
+	)
+)
+
+// MetricsCollector holds in-memory metrics (for /admin/metrics JSON endpoint)
 type MetricsCollector struct {
 	mu sync.RWMutex
 
@@ -32,6 +80,10 @@ var metricsCollector = &MetricsCollector{
 
 // RecordRequest records a request with labels
 func RecordRequest(route, tenant, status string) {
+	// Record to Prometheus
+	requestsTotal.WithLabelValues(route, tenant, status).Inc()
+
+	// Record to in-memory collector (for JSON API)
 	metricsCollector.mu.Lock()
 	defer metricsCollector.mu.Unlock()
 	key := route + ":" + tenant + ":" + status
@@ -40,6 +92,10 @@ func RecordRequest(route, tenant, status string) {
 
 // RecordLatency records request latency with labels
 func RecordLatency(route, tenant string, duration time.Duration) {
+	// Record to Prometheus
+	requestDuration.WithLabelValues(route, tenant).Observe(duration.Seconds())
+
+	// Record to in-memory collector (for JSON API)
 	metricsCollector.mu.Lock()
 	defer metricsCollector.mu.Unlock()
 	key := route + ":" + tenant
@@ -52,6 +108,10 @@ func RecordLatency(route, tenant string, duration time.Duration) {
 
 // RecordError records an error
 func RecordError(route, tenant string) {
+	// Record to Prometheus
+	errorsTotal.WithLabelValues(route, tenant).Inc()
+
+	// Record to in-memory collector (for JSON API)
 	metricsCollector.mu.Lock()
 	defer metricsCollector.mu.Unlock()
 	key := route + ":" + tenant
@@ -60,6 +120,10 @@ func RecordError(route, tenant string) {
 
 // RecordDropped records a chaos-dropped request
 func RecordDropped(route, tenant string) {
+	// Record to Prometheus
+	droppedTotal.WithLabelValues(route, tenant).Inc()
+
+	// Record to in-memory collector (for JSON API)
 	metricsCollector.mu.Lock()
 	defer metricsCollector.mu.Unlock()
 	key := route + ":" + tenant
@@ -68,12 +132,16 @@ func RecordDropped(route, tenant string) {
 
 // RecordRateLimit records a rate limit block
 func RecordRateLimit(tenant string) {
+	// Record to Prometheus
+	rateLimitBlocks.WithLabelValues(tenant).Inc()
+
+	// Record to in-memory collector (for JSON API)
 	metricsCollector.mu.Lock()
 	defer metricsCollector.mu.Unlock()
 	metricsCollector.rateLimitCount[tenant]++
 }
 
-// GetMetrics returns current metrics for Grafana scraping
+// GetMetrics returns current metrics for Grafana JSON scraping
 func GetMetrics() map[string]interface{} {
 	metricsCollector.mu.RLock()
 	defer metricsCollector.mu.RUnlock()
@@ -145,20 +213,24 @@ func Metrics(next http.Handler) http.Handler {
 
 		duration := time.Since(start)
 		route := r.URL.Path
-		tenant := r.Header.Get("X-Tenant-ID")
-		if tenant == "" {
-			tenant = "unknown"
+		tenantID := "unknown"
+		if t, ok := tenantpkg.FromContext(r.Context()); ok {
+			tenantID = t.ID
+		}
+
+		if tenantID == "" {
+			tenantID = "unknown"
 		}
 		status := strconv.Itoa(sc.statusCode)
 
-		RecordRequest(route, tenant, status)
-		RecordLatency(route, tenant, duration)
-
+		RecordRequest(route, tenantID, status)
+		RecordLatency(route, tenantID, duration)
 		if sc.statusCode >= 400 {
-			RecordError(route, tenant)
+			RecordError(route, tenantID)
 		}
 
 		log.Printf("[METRIC] path=%s tenant=%s status=%d duration_ms=%d",
-			route, tenant, sc.statusCode, duration.Milliseconds())
+			route, tenantID, sc.statusCode, duration.Milliseconds())
+
 	})
 }
