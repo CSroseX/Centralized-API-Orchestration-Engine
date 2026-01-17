@@ -1,12 +1,13 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"os"
-	"time"
+    "log"
+    "net/http"
+    "os"
+    "time"
+    "strings"
 
-	"github.com/redis/go-redis/v9"
+    "github.com/redis/go-redis/v9"
 
 	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/analytics"
 	"github.com/CSroseX/Multi-tenant-Distributed-API-Gateway/internal/chaos"
@@ -19,18 +20,34 @@ import (
 )
 
 func main() {
+    // ---- Start mock services as goroutines (separate muxes) ----
+    go startUserService()
+    go startOrderService()
+
+	// Small delay to ensure services are ready
+	time.Sleep(500 * time.Millisecond)
+
 	// ---- Tracing ----
 	shutdown := observability.InitTracer("api-gateway")
 	defer shutdown()
-	http.Handle("/metrics", promhttp.Handler())
+    // ---- Gateway mux ----
+    gatewayMux := http.NewServeMux()
+    gatewayMux.Handle("/metrics", promhttp.Handler())
 	// ---- Chaos auto-recovery watcher ----
 	chaos.AutoRecover()
 
-	// ---- Redis Client ----
-	redisAddr := getEnv("REDIS_URL", "localhost:6379")
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-	})
+    // ---- Redis Client ----
+    redisAddr := getEnv("REDIS_URL", "localhost:6379")
+    var rdb *redis.Client
+    if strings.HasPrefix(redisAddr, "redis://") {
+        opt, err := redis.ParseURL(redisAddr)
+        if err != nil {
+            log.Fatalf("invalid REDIS_URL: %v", err)
+        }
+        rdb = redis.NewClient(opt)
+    } else {
+        rdb = redis.NewClient(&redis.Options{Addr: redisAddr})
+    }
 
 	// ---- Analytics Engine ----
 	analyticsEngine := analytics.NewAnalytics(rdb)
@@ -85,22 +102,28 @@ func main() {
 		),
 	)
 
-	http.Handle("/", finalHandler)
+    gatewayMux.Handle("/", finalHandler)
 
 	// ---- CHAOS ADMIN API ----
-	http.HandleFunc("/admin/chaos", chaos.ChaosConfigHandler)
-	http.HandleFunc("/admin/chaos/recover", chaos.ChaosRecoverHandler)
-	http.HandleFunc("/admin/chaos/status", chaos.ChaosStatusHandler)
+    gatewayMux.HandleFunc("/admin/chaos", chaos.ChaosConfigHandler)
+    gatewayMux.HandleFunc("/admin/chaos/recover", chaos.ChaosRecoverHandler)
+    gatewayMux.HandleFunc("/admin/chaos/status", chaos.ChaosStatusHandler)
 
 	// Legacy endpoints for backward compatibility
-	http.HandleFunc("/admin/chaos/enable", chaos.EnableHandler)
-	http.HandleFunc("/admin/chaos/disable", chaos.DisableHandler)
+    gatewayMux.HandleFunc("/admin/chaos/enable", chaos.EnableHandler)
+    gatewayMux.HandleFunc("/admin/chaos/disable", chaos.DisableHandler)
 
 	// ---- METRICS ENDPOINT (for Grafana scraping) ----
-	http.HandleFunc("/admin/metrics", middleware.MetricsHandler)
+    gatewayMux.HandleFunc("/admin/metrics", middleware.MetricsHandler)
 
 	// ---- DEMO HTML PAGE ----
-	http.HandleFunc("/demo", serveDemoHTML)
+    gatewayMux.HandleFunc("/demo", serveDemoHTML)
+
+    // ---- HEALTH CHECK ----
+    gatewayMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("ok"))
+    })
 
 	log.Println("===============================================")
 	log.Println("API Gateway running on http://localhost:8080")
@@ -128,7 +151,7 @@ func main() {
 
 	port := getEnv("PORT", "8080")
 	log.Printf("Starting server on port %s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+    log.Fatal(http.ListenAndServe(":"+port, gatewayMux))
 }
 
 // getEnv retrieves environment variable or returns default
@@ -137,6 +160,38 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// startUserService starts the mock user service on :9001
+func startUserService() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("User Service: %s %s", r.Method, r.RequestURI)
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"service": "users", "status": "ok"}`))
+    })
+
+    log.Println("✓ User Service starting on :9001")
+    if err := http.ListenAndServe(":9001", mux); err != nil {
+        log.Printf("User Service error: %v", err)
+    }
+}
+
+// startOrderService starts the mock order service on :9002
+func startOrderService() {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("Order Service: %s %s", r.Method, r.RequestURI)
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"service": "orders", "status": "ok"}`))
+    })
+
+    log.Println("✓ Order Service starting on :9002")
+    if err := http.ListenAndServe(":9002", mux); err != nil {
+        log.Printf("Order Service error: %v", err)
+    }
 }
 
 func serveDemoHTML(w http.ResponseWriter, r *http.Request) {

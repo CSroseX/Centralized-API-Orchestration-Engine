@@ -1,11 +1,10 @@
 # Render Blueprint for automated deployment
+# Option 1: Single container with all services
 services:
-  # Main API Gateway
   - type: web
     name: api-gateway
     env: docker
     dockerfilePath: ./Dockerfile
-    dockerCommand: ./gateway
     envVars:
       - key: REDIS_URL
         fromService:
@@ -19,26 +18,6 @@ services:
       - key: PORT
         value: 8080
     healthCheckPath: /health
-
-  # Mock User Service
-  - type: web
-    name: mock-user-service
-    env: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: ./mock-user
-    envVars:
-      - key: PORT
-        value: 9001
-
-  # Mock Order Service
-  - type: web
-    name: mock-order-service
-    env: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: ./mock-order
-    envVars:
-      - key: PORT
-        value: 9002
 
 # Redis Database
 databases:

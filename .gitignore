@@ -7,6 +7,8 @@ DEPLOYMENT_GUIDE.md
 
 # Local mocks / test backends
 mock-*.go
+mock-order.go
+mock-user.go
 
 # IDE / editor configs
 .vscode/
