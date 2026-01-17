@@ -6,10 +6,7 @@ services:
     dockerfilePath: ./Dockerfile
     envVars:
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: redis-cache
-          property: connectionString
+        value: redis://localhost:6379
       - key: USER_SERVICE_URL
         value: http://localhost:9001
       - key: ORDER_SERVICE_URL
@@ -17,9 +14,3 @@ services:
       - key: PORT
         value: 8080
     healthCheckPath: /health
-
-# Redis Database
-databases:
-  - name: redis-cache
-    plan: free
-    ipAllowList: []
