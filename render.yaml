@@ -1,9 +1,8 @@
-# Render Blueprint for automated deployment
-# Option 1: Single container with all services
 services:
   - type: web
     name: api-gateway
     env: docker
+    plan: free
     dockerfilePath: ./Dockerfile
     envVars:
       - key: REDIS_URL

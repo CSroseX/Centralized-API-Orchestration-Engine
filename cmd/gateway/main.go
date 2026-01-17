@@ -24,8 +24,7 @@ func main() {
     go startUserService()
     go startOrderService()
 
-	// Small delay to ensure services are ready
-	time.Sleep(500 * time.Millisecond)
+    // Services start independently; no blocking/sleep needed
 
 	// ---- Tracing ----
 	shutdown := observability.InitTracer("api-gateway")
