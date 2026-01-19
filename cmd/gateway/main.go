@@ -423,7 +423,10 @@ button.secondary {
   overflow-y: auto;
 }
 
-/* Logs */
+/* ===================== */
+/* LOGS (WITH ANIMATION) */
+/* ===================== */
+
 .logs-container {
   background: #1a1a1a;
   border: 3px solid #000;
@@ -448,6 +451,21 @@ button.secondary {
   padding: 1rem 1.5rem;
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
+
+  overflow: hidden;
+  max-height: 600px;
+  opacity: 1;
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+}
+
+.logs-container.minimized .logs-content {
+  max-height: 0;
+  opacity: 0;
+}
+
+.logs-container.expanded .logs-content {
+  max-height: 600px;
+  opacity: 1;
 }
 
 .log-entry {
@@ -467,10 +485,12 @@ button.secondary {
   cursor: pointer;
   font-size: 1.2rem;
 }
-  .guide-card h3 {
-    margin-top: 2rem;
+
+.guide-card h3 {
+  margin-top: 2rem;
 }
 </style>
+
 </head>
 <body>
 
@@ -962,6 +982,7 @@ body {
   flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 2rem;
+  align-items: center;
 }
 
 .tab {
@@ -1199,7 +1220,7 @@ body {
                 <h2 style="margin-bottom: 2rem;">Architecture Layers</h2>
                 
                 <div class="layer global">
-                    <div class="layer-title">🌐 External Layer</div>
+                    <div class="layer-title">External Layer</div>
                     <div class="layer-content">
                         <div class="middleware-item">
                             <div class="middleware-name">Clients (Web, Mobile, CLI)</div>
@@ -1211,7 +1232,7 @@ body {
                 <div class="arrow">↓</div>
 
                 <div class="layer global">
-                    <div class="layer-title">🔧 Global Middleware (All Requests)</div>
+                    <div class="layer-title">Global Middleware (All Requests)</div>
                     <div class="layer-content">
                         <div class="middleware-item">
                             <div class="middleware-name">1. Logging Middleware</div>
@@ -1235,7 +1256,7 @@ body {
                 <div class="arrow">↓</div>
 
                 <div class="layer endpoint">
-                    <div class="layer-title">🎯 Router</div>
+                    <div class="layer-title">Router</div>
                     <div class="layer-content">
                         <div class="middleware-item">
                             <div class="middleware-name">Pattern Matching</div>
@@ -1247,7 +1268,7 @@ body {
                 <div class="arrow">↓</div>
 
                 <div class="layer endpoint">
-                    <div class="layer-title">⚙️ Endpoint Middleware (/users, /orders only)</div>
+                    <div class="layer-title">Endpoint Middleware (/users, /orders only)</div>
                     <div class="layer-content">
                         <div class="middleware-item">
                             <div class="middleware-name">1. Analytics Middleware</div>
@@ -1271,7 +1292,7 @@ body {
                 <div class="arrow">↓</div>
 
                 <div class="layer global">
-                    <div class="layer-title">🖥️ Backend Services</div>
+                    <div class="layer-title">Backend Services</div>
                     <div class="layer-content">
                         <div class="middleware-item">
                             <div class="middleware-name">User Service (:9001) | Order Service (:9002)</div>
