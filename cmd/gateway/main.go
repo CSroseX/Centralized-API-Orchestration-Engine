@@ -502,7 +502,7 @@ button.secondary {
   </div>
   <div class="navbar-credit">
     Engineered by <span>Chitransh</span>
-    <a href="https://github.com/CSroseX" target="_blank" class="social-link">GitHub</a>
+    <a href="https://github.com/CSroseX/Centralized-API-Orchestration-Engine" target="_blank" class="social-link">GitHub</a>
     <a href="https://www.linkedin.com/in/chitranshatlkdin/" target="_blank" class="social-link">LinkedIn</a>
   </div>
 </div>
