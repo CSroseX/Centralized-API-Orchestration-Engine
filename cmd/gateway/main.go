@@ -535,7 +535,7 @@ button.secondary {
             <div class="left-column">
 				<div class="card grafana-card">
 				    <div class="card-title">
-				        See Live Metrics in Grafana Dashboard
+				        See Live Metrics in Grafana Dashboard (Metrics may be delayed due to Render.com free-tier cold starts)
 				    </div>
 				    <a
 				        href="https://csrosex.grafana.net/public-dashboards/3c2996c1426f4726bbd53f729b5c2a2c"
