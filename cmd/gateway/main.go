@@ -473,6 +473,7 @@ button.secondary {
   padding: 0.5rem;
   margin-bottom: 0.25rem;
   border-left: 4px solid #3b82f6;
+  white-space: pre-wrap;
 }
 
 .log-entry.success { border-left-color: #22c55e; }
